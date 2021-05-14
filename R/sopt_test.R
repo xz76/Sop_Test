@@ -1,5 +1,4 @@
 
-
 sopt_test <- function(data, tmat, cid = "cid", id = "id", group = "group", 
                       j = 2, B = 1000, ipw = 0, tau = NULL, method = "linear"){
   
@@ -11,7 +10,7 @@ sopt_test <- function(data, tmat, cid = "cid", id = "id", group = "group",
   if(is.null(data[[group]])){
     stop("group information is needed")
   }
-
+  
   if(nrow(tmat)!=ncol(tmat)){
     stop("tmat is not a square matrix")
   }
@@ -39,9 +38,9 @@ sopt_test <- function(data, tmat, cid = "cid", id = "id", group = "group",
   }
   
   for(g in groups){
-      group_data <- data[data[,group]==g,]
-      P0 <- sop_t(data = group_data, tau=NULL,
-                  ipw=0, tmat = tmat, times = NULL)
+    group_data <- data[data[,group]==g,]
+    P0 <- sop_t(data = group_data, tau=NULL,
+                ipw=0, tmat = tmat, times = NULL)
     rep1 <- function(x){
       x[c(1, seq_along(x))]
     }
@@ -85,10 +84,13 @@ sopt_test <- function(data, tmat, cid = "cid", id = "id", group = "group",
   if(length(tms)==0 | max(Wt, na.rm=TRUE)==0){
     stop("Weights NA or 0 for all timepoints")
   }
-  Wt <- Wt[!is.na(Wt)]
-
   
-  estimator <- function(data,cov,tau,ipw, tmat, Wt, method){
+  Wt <- Wt[!is.na(Wt)]
+  if(method=="KS"){
+    D_hat <- (Pt[[1]](tms) - Pt[[2]](tms))
+  }
+  
+  estimator <- function(data, cov){
     if (cov != 0 && cov != 1) {
       stop("The 'cov' has to be 0 or 1.")
     }
@@ -121,17 +123,15 @@ sopt_test <- function(data, tmat, cid = "cid", id = "id", group = "group",
       dm<-diff(c(tms,tau),lag=1)
       res <- sum(Wt * D_t * dm)
     } else if(method=="KS"){
-      D_hat <- (Pt[[1]](tms) - Pt[[2]](tms))
       res <- max(abs(Wt * (D_t - D_hat)))
     }
     return(res)
   }
-  dauc_boot <- function (data, cov, tau =NULL, ipw, tmat,
-                         Wt, B,  verbose = 0, id,  method)
+  dauc_boot <- function (data, cov,  B, verbose = 0, id)
   {
     ids <- unique(data[[id]])
     n <- length(ids)
-    res <- matrix(NA, length(Z0), B)
+    res <- matrix(NA, 1 , B)
     
     for (b in 1:B) {
       if (verbose > 0) {
@@ -150,8 +150,7 @@ sopt_test <- function(data, tmat, cid = "cid", id = "id", group = "group",
       if (all(bootdata$from == bootdata$to)){
         next
       }
-      thstar <-  try(estimator( data = bootdata, cov = bootdata$group, tau = tau,
-                                ipw = ipw, tmat = tmat, Wt = Wt, method = method))
+      thstar <-  try(estimator( data = bootdata, cov = bootdata$group))
       if (class(thstar)!="try-error"){
         res[, b] <- thstar
       }else{
@@ -163,27 +162,20 @@ sopt_test <- function(data, tmat, cid = "cid", id = "id", group = "group",
       cat("\n")
     return(res)
   }
-  Z0 <-  estimator( data = data, cov = data[, group], tau = NULL, 
-                    ipw = 0, tmat = tmat, Wt = Wt,  method = method)
+  Z0 <-  estimator( data = data, cov = data[, group])
   if (method == "linear") {
-
-    dauc_res <- dauc_boot( data = data, cov = data$group,
-                           ipw = ipw, tmat = tmat, Wt = Wt, B = B, id = cid, method = method)
+    dauc_res <- dauc_boot( data = data, cov = data$group, B = B, id = cid)
     dauc_res <- as.numeric(na.omit(dauc_res))
     dauc_sd <- sd(dauc_res)
-    
     T_linear <- Z0/dauc_sd
     pval <- 2*pnorm(abs(T_linear), lower.tail = FALSE)
-  } else {
-    D_hat <- (Pt[[1]](tms) - Pt[[2]](tms))
-    KS0 <- max(abs(Wt*D_hat)* sqrt(n))
-    browser()
-    KS.b <- dauc_boot(data = data, cov = data$group,
-                      ipw = ipw, tmat = tmat, Wt = Wt, B = B, id = cid, method = method)
+  } else if (method == "KS"){
+    KS0 <- max(abs(Wt*D_hat))
+   # browser()
+    KS.b <- dauc_boot(data = data, cov = data$group, B = B, id = cid)
     KS.boot <- apply(abs(KS.b),2,max)
     pval <- mean(KS.boot >= KS0, na.rm = TRUE)
   }
-  
   names(pval) <- paste0("p-value at State", j)
   return(pval)
 }
