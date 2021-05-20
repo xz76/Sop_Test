@@ -46,6 +46,7 @@ sop_t <- function(data, tau = NULL, ipw = 0, tmat,
     diff(c(0, CTI[[i]](tt)), lag = 1)
   })
   
+  ## Corresponding to pointer.  
   ttrans <- t(tmat)
   mat0 <- matrix(0, nrow = nrow(tmat), ncol = ncol(tmat))
   mat_list <- lapply(seq_len(nrow(dA)), function(i) {
@@ -60,11 +61,11 @@ sop_t <- function(data, tau = NULL, ipw = 0, tmat,
   #Calculate the product integral estimator
   P_n<-Reduce("%*%",  mat_list, accumulate = TRUE)
   p_0 <- sapply(S, function(i){
-    sum(data[data$Tstart==0, "from"] == i)/nrow(data[data$Tstart==0,])
+    sum(data[data$Tstart==0, "from"] == i) / nrow(data[data$Tstart == 0, ])
     })
   p_n <- matrix(NA, nrow = length(tt), ncol = nrow(tmat))
   for(i in 1 : length(tt)){
-    p_n[i,] <- p_0%*%P_n[[i]]
+    p_n[i,] <- p_0 %*% P_n[[i]]
   }
   p_n <- rbind(c(0, p_0), cbind(tt, p_n))
   p_n <- as.data.frame(p_n)
