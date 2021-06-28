@@ -1,7 +1,9 @@
-prob.est <- function(data, s=NULL, h=NULL, j, tau = NULL, tmat,
+tpr.t <- function(data, s = NULL, h = NULL, j, tau = NULL, tmat,
                   times = NULL, weights = NULL, CI = TRUE){
+
   S <- as.numeric(sort(unique(c(data$from, data$to))))
   T_c <- as.numeric(sort(unique(data$from)))
+
   if(nrow(tmat) != ncol(tmat)){
     stop("tmat is not a square matrix")
   }
@@ -21,7 +23,7 @@ prob.est <- function(data, s=NULL, h=NULL, j, tau = NULL, tmat,
   if(is.null(tau)){
     tau <- max(data$Tstop)
   }
-  
+
   ## unique time points
   tt <-sort(unique(data[data$to != data$from,"Tstop"]))
   tt <- tt[tt<=tau]
@@ -30,13 +32,13 @@ prob.est <- function(data, s=NULL, h=NULL, j, tau = NULL, tmat,
   }
   ## prob_n function to estimate probability at state j   
   prob_n <- function(data){
-  CTI <- list()
-  counter <- 1
-  for(h0 in T_c){
-    for(j0 in S[tmat[h0, ]]){
-      data_h <- data[data$from == h0, ]
-      data_h$delta <- 1*(data_h$to == j0)
-      if(is.null(weights)){
+    CTI <- list()
+    counter <- 1
+    for(h0 in T_c){
+      for(j0 in S[tmat[h0, ]]){
+       data_h <- data[data$from == h0, ]
+       data_h$delta <- 1*(data_h$to == j0)
+       if(is.null(weights)){
         fit <- coxph(Surv(Tstart, Tstop, delta, type = "counting") ~ 1, 
                      data = data_h, control = coxph.control(timefix = FALSE))
       } else {
@@ -55,9 +57,16 @@ prob.est <- function(data, s=NULL, h=NULL, j, tau = NULL, tmat,
       counter <- counter + 1
     }
   }
-  dA <- sapply(seq_along(CTI), function(i) {
-    diff(c(0, CTI[[i]](tt)), lag = 1)
-  })
+
+  if(is.null(s) || s==0){
+    dA <- sapply(seq_along(CTI), function(i) {
+      diff(c(0, CTI[[i]](tt)), lag = 1)
+    })
+  } else {
+    dA <- sapply(seq_along(CTI), function(i) {
+      diff(c(CTI[[i]](s), CTI[[i]](tt)), lag = 1)
+    })
+  }
   ## Corresponding to pointer.  
   ttrans <- t(tmat)
   mat0 <- matrix(0, nrow = nrow(tmat), ncol = ncol(tmat))
@@ -92,7 +101,10 @@ prob.est <- function(data, s=NULL, h=NULL, j, tau = NULL, tmat,
       colnames(p_n) <- c("t",  paste0("p", h, j))
     } 
     if (!is.null(times)){
-      p_nt <- sapply(times, function(t){tail(p_n[which(p_n$t < t), ], 1)})
+      if (min(times) <= s){
+        stop("min time cannot less than s")
+      }
+      p_nt <- sapply(times, function(t){tail(p_n[which(p_n$t <= t), ], 1)})
       colnames(p_nt) <- times
       res <- t(p_nt)
       out <- do.call(c, res)
@@ -116,20 +128,21 @@ prob.est <- function(data, s=NULL, h=NULL, j, tau = NULL, tmat,
       bids <- sample(ids, replace = TRUE)
       bidxs <- unlist(sapply(bids, function(x) which(x == data[[id]])))
       bootdata <- data[bidxs, ]
-      bootres <-  prob_n(bootdata)[, 2]
-      res[ , b] <- bootres
+      bootres <- try(prob_n(bootdata), silent = TRUE)
+      if (class(bootres)!="try-error"){
+        res[ , b] <- bootres[, 2]
+      }else{
+        res[ , b] <- NA
+      }
     }
     return(res)
   }
   
   ## CI
   if (CI == TRUE) {
-    res_boot <- prob_boot(data = data, B = 100, id = "id")
+    res_boot <- prob_boot(data = data, B = 100, id = "cid")
     se <- apply(res_boot, 1, sd)
-    
-    #############
-    ### ? /sqrt(n)
-    #############
+
     res$se <- se  
     ## cloglog transformation
     if (is.null(h)){
